@@ -1,0 +1,11 @@
+# Ignore CMake build directory
+build/
+
+# Ignore other common build artifacts if necessary
+*.o
+*.a
+*.so
+*.dylib
+compat_format_tests # If the executable is in the root
+tests/compat_format_tests # If the executable is in tests/ but not in build/tests
+# Add other patterns as needed, e.g., specific IDE files, OS files like .DS_Store etc.
