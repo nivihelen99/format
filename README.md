@@ -32,6 +32,12 @@ The library also includes a mechanism (`COMPAT_USE_STD_FORMAT`) to automatically
         *   `f`: Fixed-point notation for floating-point numbers.
 *   **Escaped Braces**: `{{` and `}}` are used to print literal `{` and `}` characters.
 *   **Type Support**: Handles standard C++ types like integers, floating-point numbers, `bool`, `std::string`, C-style strings (`const char*`, `char[]`).
+    *   **Integer Base Formatting**:
+        *   `b`, `B`: Binary format.
+        *   `o`: Octal format.
+        *   `x`, `X`: Hexadecimal format (lowercase `x`, uppercase `X`).
+        *   `#`: Alternate form prefix (e.g., `0b`, `0`, `0x`, `0X`).
+    *   **User-Defined Types**: Support for formatting user-defined types by specializing `compat::internal::formatter<YourType>`.
 *   **Error Handling**: Throws `std::runtime_error` for invalid format strings, mismatched arguments, or parsing errors.
 
 ## Usage
@@ -106,7 +112,63 @@ compat::println("Float fill/align/prec: '{}'", compat::format("{:0>10.2f}", 12.3
 
 // Positional arguments with specifiers
 compat::println("Mixed: {1:.2f} then {0:*<5}", "str", 9.876); // Output: 9.88 then str**
+
+// Integer Base Formatting
+compat::println("Binary: {0:b} / {0:#b} / {0:#010b}", 42);      // Binary: 101010 / 0b101010 / 0b00101010
+compat::println("Octal: {0:o} / {0:#o} / {0:#08o}", 42);        // Octal: 52 / 052 / 00000052
+compat::println("Hex: {0:x} / {0:#X} / {0:#08x}", 42);          // Hex: 2a / 0X2A / 0x00002a
+compat::println("Negative Hex: {:#x}", -42);                     // Negative Hex: -0x2a
+
+// User-Defined Type Formatting (example with a Point struct)
+// Assuming Point struct and its compat::internal::formatter specialization:
+// struct Point { int x, y; };
+// template<> struct compat::internal::formatter<Point> {
+//     static std::string format(const Point& p, const compat::internal::ParsedFormatSpec& spec) {
+//         std::string point_str = "(" + std::to_string(p.x) + ", " + std::to_string(p.y) + ")";
+//         return compat::internal::apply_padding_internal(point_str, "", spec);
+//     }
+// };
+compat::internal::Point pt{10, 20}; // Needs Point to be accessible or defined
+compat::println("Point: {}", pt);                                 // Point: (10, 20)
+compat::println("Padded Point: '{:*>15}'", pt);                   // Padded Point: '*****(10, 20)'
 ```
+
+### Defining Formatters for Custom Types
+To enable formatting for your own types, you need to specialize `compat::internal::formatter<YourType>` within the `compat::internal` namespace. The specialization must provide a static method:
+`static std::string format(const YourType& value, const ParsedFormatSpec& spec);`
+
+Example for a `Point` struct:
+```cpp
+// In your code, or a header included after compat_format.hpp if Point is defined there
+namespace compat { namespace internal { // Open the namespace
+
+struct UserPoint { // Example, could be defined anywhere accessible
+    int x, y;
+};
+
+template<>
+struct formatter<UserPoint> {
+    static std::string format(const UserPoint& p, const ParsedFormatSpec& spec) {
+        // Create the string representation of UserPoint
+        std::string point_str = "(" + std::to_string(p.x) + ", " +
+                                  std::to_string(p.y) + ")";
+
+        // Use library's padding logic if desired (prefix is usually empty for non-numeric custom types)
+        return apply_padding_internal(point_str, "", spec);
+        // Or, for more complex needs, call compat::format recursively:
+        // return compat::format("({0},{1})", p.x, p.y); // this would not use 'spec' for the Point itself
+                                                       // but for p.x and p.y if they had specs.
+    }
+};
+
+}} // Close compat::internal
+
+// Then you can use it:
+// UserPoint my_point{1, 2};
+// compat::println("My Point: {}", my_point); // Output: My Point: (1, 2)
+// compat::println("My Point padded: '{:*>15}'", my_point); // Output: My Point padded: '*****(1, 2)'
+```
+
 
 ## Building with CMake
 
@@ -160,8 +222,7 @@ This allows for a smoother transition. You can start using `compat::` functions,
 
 ## Future Enhancements (Not Yet Implemented)
 
-*   More advanced format specifiers (e.g., binary, hex, octal formatting for integers).
-*   Support for formatting user-defined types via template specializations of `compat::internal::formatter`.
 *   UTF-8 and wide character support (`wchar_t`, `char16_t`, `char32_t`).
 *   Locale-aware formatting.
-*   More extensive error checking for format specifier validity.
+*   More extensive error checking for format specifier validity for types beyond basic numerics/strings.
+*   Additional `std::format` type specifiers for floats (e.g., `e`, `g`, `a`) and characters (`c`).
