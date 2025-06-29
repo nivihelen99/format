@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <array>
 #include <vector>
 #include <tuple>
 #include <stdexcept> // For std::runtime_error
@@ -11,6 +12,7 @@
 #include <iomanip>   // For std::setprecision, std::fixed
 #include <sstream>   // For std::stringstream in formatters
 #include <limits>    // For std::numeric_limits
+#include <cstdint>   // For std::uint8_t
 
 // C++23 standard library detection
 #if __has_include(<format>) && __has_include(<print>) && defined(__cpp_lib_format) && __cpp_lib_format >= 202106L && defined(__cpp_lib_print) && __cpp_lib_print >= 202207L
@@ -343,7 +345,7 @@ namespace compat {
 
     } // namespace internal
 
-    enum class IndexingMode {
+    enum class IndexingMode : ::std::uint8_t {
         Unknown,
         Automatic,
         Manual
@@ -354,7 +356,7 @@ namespace compat {
         auto arg_tuple = std::make_tuple(std::forward<Args>(args)...);
         std::size_t current_auto_arg_index = 0;
         const std::size_t num_args = sizeof...(Args);
-        IndexingMode indexing_mode = IndexingMode::Unknown;
+        compat::IndexingMode indexing_mode = compat::IndexingMode::Unknown;
 
         for (std::size_t i = 0; i < fmt.length(); ++i) {
             if (fmt[i] == '{') {
@@ -378,17 +380,17 @@ namespace compat {
                     std::size_t arg_to_format_idx;
 
                     if (parsed_spec.arg_id_str.empty()) {
-                        if (indexing_mode == IndexingMode::Manual) {
+                        if (indexing_mode == compat::IndexingMode::Manual) {
                             throw std::runtime_error("Cannot switch from manual (e.g. {0}) to automatic (e.g. {}) argument indexing");
                         }
-                        indexing_mode = IndexingMode::Automatic;
+                        indexing_mode = compat::IndexingMode::Automatic;
                         arg_to_format_idx = current_auto_arg_index;
                         current_auto_arg_index++;
                     } else {
-                        if (indexing_mode == IndexingMode::Automatic) {
+                        if (indexing_mode == compat::IndexingMode::Automatic) {
                             throw std::runtime_error("Cannot switch from automatic (e.g. {}) to manual (e.g. {0}) argument indexing");
                         }
-                        indexing_mode = IndexingMode::Manual;
+                        indexing_mode = compat::IndexingMode::Manual;
                         try {
                             for(char ch_id : parsed_spec.arg_id_str) {
                                 if (!std::isdigit(ch_id)) {
