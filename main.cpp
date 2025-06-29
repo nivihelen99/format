@@ -46,7 +46,39 @@ int main() {
 
     compat::println("Value: {1}, User: {0} (positional with println)", user_name, x);
 
-    compat::println("--- End of demonstration ---");
+    compat::println("\n--- New Integer Format Specifiers ---");
+    int num = 42;
+    compat::println("Decimal: {:d}", num);
+    compat::println("Binary: {:b}", num);
+    compat::println("Binary (#): {:#b}", num);
+    compat::println("Binary (#B): {:#B}", num);
+    compat::println("Octal: {:o}", num);
+    compat::println("Octal (#): {:#o}", num);
+    compat::println("Hex (lower): {:x}", num);
+    compat::println("Hex (lower, #): {:#x}", num);
+    compat::println("Hex (upper): {:X}", num);
+    compat::println("Hex (upper, #): {:#X}", num);
+
+    compat::println("Number -10 in binary: {:b}", -10);
+    compat::println("Number -10 in hex (#): {:#x}", -10);
+
+    compat::println("Zero in binary (#): {:#b}", 0);
+    compat::println("Zero in octal (#): {:#o}", 0);
+    compat::println("Zero in hex (#): {:#x}", 0);
+
+    compat::println("Padded hex: {:#08x}", num);
+    compat::println("Padded binary: {:012b}", num);
+    compat::println("Left-aligned hex: {:#<8x}", num);
+
+
+    compat::println("\n--- User-Defined Type Formatting (Point) ---");
+    compat::internal::Point pt{7, -3}; // Assuming Point is in compat::internal for this example
+    compat::println("Default Point: {}", pt);
+    compat::println("Padded Point: {:*>15}", pt);
+    compat::println("Centered Point: {:^15}", pt);
+
+
+    compat::println("\n--- End of demonstration ---");
 
     return 0;
 }

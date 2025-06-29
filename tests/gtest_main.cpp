@@ -60,8 +60,8 @@ TEST(CompatFormat, ZeroArguments) {
 TEST(CompatFormat, MultipleArguments) {
     // Note: std::to_string for double usually gives 6 decimal places.
     // The new formatter might change this, especially with precision specifiers.
-    // For now, testing with default float formatting.
-    EXPECT_EQ(compat::format("Five args: {} {} {} {} {}", 1, "two", 3.0, false, "end"), "Five args: 1 two 3.000000 false end");
+    // For now, testing with default float formatting. Float 3.0 now formats as "3" by default.
+    EXPECT_EQ(compat::format("Five args: {} {} {} {} {}", 1, "two", 3.0, false, "end"), "Five args: 1 two 3 false end");
 }
 
 
@@ -239,6 +239,125 @@ TEST(CompatFormatSpecifiers, InvalidSpecifiers) {
     // Width out of range (if parse_placeholder_content checks this, depends on stoi behavior)
     // std::stoi might throw std::out_of_range which is caught by parse_placeholder_content
     // EXPECT_THROW(compat::format("{:99999999999999999999}", 123), std::runtime_error); // Large width
+}
+
+TEST(CompatFormatSpecifiers, IntegerBaseFormatting) {
+    // Binary
+    EXPECT_EQ(compat::format("{:b}", 0), "0");
+    EXPECT_EQ(compat::format("{:b}", 10), "1010");
+    EXPECT_EQ(compat::format("{:B}", 10), "1010"); // Same output for 'b' and 'B' in value, could differ with #
+    EXPECT_EQ(compat::format("{:#b}", 10), "0b1010");
+    EXPECT_EQ(compat::format("{:#B}", 10), "0B1010");
+    EXPECT_EQ(compat::format("{:b}", -10), "-1010"); // Current impl: sign then abs binary
+    EXPECT_EQ(compat::format("{:#b}", -10), "-0b1010");
+    EXPECT_EQ(compat::format("{:#b}", 0), "0b0"); // std::format behavior
+
+    // Octal
+    EXPECT_EQ(compat::format("{:o}", 0), "0");
+    EXPECT_EQ(compat::format("{:o}", 10), "12");
+    EXPECT_EQ(compat::format("{:#o}", 10), "012");
+    EXPECT_EQ(compat::format("{:o}", -10), "-12");
+    EXPECT_EQ(compat::format("{:#o}", -10), "-012");
+    EXPECT_EQ(compat::format("{:#o}", 0), "0"); // std::format behavior for #o with 0
+
+    // Hexadecimal
+    EXPECT_EQ(compat::format("{:x}", 0), "0");
+    EXPECT_EQ(compat::format("{:x}", 26), "1a");
+    EXPECT_EQ(compat::format("{:X}", 26), "1A");
+    EXPECT_EQ(compat::format("{:#x}", 26), "0x1a");
+    EXPECT_EQ(compat::format("{:#X}", 26), "0X1A");
+    EXPECT_EQ(compat::format("{:x}", -26), "-1a");
+    EXPECT_EQ(compat::format("{:X}", -26), "-1A");
+    EXPECT_EQ(compat::format("{:#x}", -26), "-0x1a");
+    EXPECT_EQ(compat::format("{:#X}", -26), "-0X1A");
+    EXPECT_EQ(compat::format("{:#x}", 0), "0x0"); // std::format behavior
+    EXPECT_EQ(compat::format("{:#X}", 0), "0X0"); // std::format behavior
+
+    // Decimal (default)
+    EXPECT_EQ(compat::format("{:d}", 10), "10");
+    EXPECT_EQ(compat::format("{:d}", -10), "-10");
+    EXPECT_EQ(compat::format("{}", 10), "10"); // Default type for int
+
+    // Invalid type specifiers for integers
+    EXPECT_THROW(compat::format("{:f}", 10), std::runtime_error);
+    EXPECT_THROW(compat::format("{:s}", 10), std::runtime_error);
+}
+
+TEST(CompatFormatSpecifiers, IntegerBaseFormattingWithPadding) {
+    // Binary with padding
+    EXPECT_EQ(compat::format("{:08b}", 10), "00001010");
+    EXPECT_EQ(compat::format("{:#010b}", 10), "0b00001010"); // Expected: prefix, then zeros, then value
+    EXPECT_EQ(compat::format("{:#010B}", 10), "0B00001010"); // Expected: prefix, then zeros, then value. Actual: "0B10100000"
+    EXPECT_EQ(compat::format("{:*>10b}", 10), "******1010");
+    EXPECT_EQ(compat::format("{:*>#10b}", 10), "****0b1010"); // Corrected expectation: 10 - (len("0b")+len("1010")) = 10-6=4 asterisks
+    EXPECT_EQ(compat::format("{:08b}", -10), "-0001010");
+    EXPECT_EQ(compat::format("{:#010b}", -10), "-0b0001010"); // Corrected expectation: 10 - (len("-0b")+len("1010")) = 10-7=3 zeros
+
+    // Octal with padding
+    EXPECT_EQ(compat::format("{:08o}", 10), "00000012");
+    EXPECT_EQ(compat::format("{:#08o}", 10), "00000012"); // My impl: prefix '0' replaces a padding '0' if it fits.
+                                                      // std::format: "00000o12" (prefix not counted in width for zero pad logic as much)
+                                                      // Let's test current behavior: apply_padding_internal treats "0" and "12"
+                                                      // For "{:#08o}", 10 -> prefix "0", value "12". apply_padding_internal("12", "0", spec)
+                                                      // sign="", prefix="0", value="12". If width 8, fill '0'.
+                                                      // result: "0" + "00000" + "12" = "00000012" - this is good.
+    EXPECT_EQ(compat::format("{:#08o}", 010), "00000010"); // Test with actual octal input (value 8)
+    EXPECT_EQ(compat::format("{:#8o}", 0), "       0"); // Default align right for numbers
+    EXPECT_EQ(compat::format("{:#08o}", 0), "00000000"); // #o for 0 is "0", then padded.
+
+    // Hex with padding
+    EXPECT_EQ(compat::format("{:08x}", 26), "0000001a");
+    EXPECT_EQ(compat::format("{:#08x}", 26), "0x00001a");
+    EXPECT_EQ(compat::format("{:#08X}", 26), "0X00001A");
+    EXPECT_EQ(compat::format("{:*>10x}", 26), "********1a");
+    EXPECT_EQ(compat::format("{:*>#10x}", 26), "******0x1a"); // Corrected expectation: 10 - len("0x1a") = 6 asterisks
+    EXPECT_EQ(compat::format("{:08x}", -26), "-000001a");
+    EXPECT_EQ(compat::format("{:#08x}", -26), "-0x0001a");
+}
+
+TEST(CompatFormatSpecifiers, FloatHashFlag) {
+    EXPECT_EQ(compat::format("{:#f}", 3.0), "3.000000"); // Default precision 6, # ensures . is there
+    EXPECT_EQ(compat::format("{:#.0f}", 3.0), "3.");     // Precision 0, # ensures . is there
+    EXPECT_EQ(compat::format("{:.0f}", 3.0), "3");      // Precision 0, no #
+    EXPECT_EQ(compat::format("{:#f}", 3.14), "3.140000"); // Already has ., default prec
+    EXPECT_EQ(compat::format("{:#.2f}", 3.14159), "3.14");
+    // EXPECT_EQ(compat::format("{:#g}", 3.0), "3."); // General format 'g' not implemented
+    // EXPECT_EQ(compat::format("{:g}", 3.0), "3");   // General format 'g' not implemented
+    // Test with inf/nan - hash should not add a decimal point
+    double inf_val = std::numeric_limits<double>::infinity();
+    double nan_val = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_EQ(compat::format("{:f}", inf_val), "inf"); // Or "infinity" depending on system
+    EXPECT_EQ(compat::format("{:#f}", inf_val), "inf");
+    // Note: NaN string representation can vary ("nan", "nan(ind)", etc.)
+    // We'll rely on stringstream's output for these.
+    std::string nan_str_default = compat::format("{}", nan_val);
+    EXPECT_EQ(compat::format("{:#f}", nan_val), nan_str_default);
+
+}
+
+// --- Tests for User-Defined Types ---
+TEST(CompatFormatUserDefined, PointFormatting) {
+    compat::internal::Point p{10, 20};
+    EXPECT_EQ(compat::format("{}", p), "(10, 20)");
+
+    // Test with width and alignment
+    // Point p{10, 20} -> "(10, 20)" which has length 8
+    EXPECT_EQ(compat::format("{:>15}", p), "       (10, 20)"); // 15 - 8 = 7 spaces
+    EXPECT_EQ(compat::format("{:*<15}", p), "(10, 20)*******"); // 7 asterisks
+    EXPECT_EQ(compat::format("{:*^15}", p), "***(10, 20)****"); // 3 leading, 4 trailing asterisks for 7 total
+
+    compat::internal::Point p_neg{-5, -150}; // "(-5, -150)" which has length 10
+    EXPECT_EQ(compat::format("{}", p_neg), "(-5, -150)");
+    // For {:015}, Point has spec.type='\0', so apply_padding_internal treats it as numeric for default alignment.
+    // Default align becomes '>', spec.fill='0'.
+    // Expected: "00000(-5, -150)"
+    EXPECT_EQ(compat::format("{:015}", p_neg), "00000(-5, -150)");
+    EXPECT_EQ(compat::format("{:0<15}", p_neg), "(-5, -150)00000");
+    EXPECT_EQ(compat::format("{:0>15}", p_neg), "00000(-5, -150)");
+
+
+    // What if a user's formatter for Point itself used compat::format for its members?
+    // That's up to the user's Point::format specialization. The current one uses std::to_string.
 }
 
 
