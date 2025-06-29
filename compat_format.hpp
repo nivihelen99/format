@@ -226,6 +226,11 @@ namespace compat {
                 return apply_padding(std::string(value), spec);
             }
         };
+        template<> struct formatter<char*> { // Added specialization for char*
+            static std::string format(char* value, const ParsedFormatSpec& spec) {
+                return apply_padding(std::string(value), spec);
+            }
+        };
         template<> struct formatter<std::string> {
             static std::string format(const std::string& value, const ParsedFormatSpec& spec) {
                 return apply_padding(value, spec);
