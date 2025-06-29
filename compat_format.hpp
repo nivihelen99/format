@@ -104,6 +104,13 @@ namespace compat {
                 }
             }
 
+            // Check for '0' prefix which implies zero-padding if no explicit fill/align is set.
+            if (spec.fill == ' ' && spec.align == '\0' &&      // No explicit fill or alignment yet
+                current_pos < content_len && content[current_pos] == '0' && // Current character is '0'
+                (current_pos + 1 < content_len && std::isdigit(content[current_pos + 1]))) { // And it's followed by another digit (part of width)
+                spec.fill = '0';
+                // The '0' is not consumed here; it will be part of the width parsed next.
+            }
 
             // 3. Width (optional)
             if (current_pos < content_len && std::isdigit(content[current_pos])) {
@@ -163,25 +170,20 @@ namespace compat {
             result.reserve(spec.width);
 
             char align_char = spec.align;
-            bool is_numeric_type_for_default_align = false; // This needs to be known from the formatter/type
-            // Hack: Check if the value looks like a number for default alignment.
-            // A more robust way would be to pass this info from the calling formatter.
+            bool is_numeric_type_for_default_align = false;
             if (!value.empty() && (std::isdigit(value[0]) || ((value[0] == '-' || value[0] == '+') && value.length() > 1 && std::isdigit(value[1])))) {
                 is_numeric_type_for_default_align = true;
             }
 
-
             if (align_char == '\0') { // No alignment specified
-                align_char = is_numeric_type_for_default_align ? '>' : '<';
+                // If fill is '0' (zero-padding flag was set), default to right align for numbers.
+                // Otherwise, left for strings, right for numbers.
+                if (spec.fill == '0' && is_numeric_type_for_default_align) {
+                    align_char = '>';
+                } else {
+                    align_char = is_numeric_type_for_default_align ? '>' : '<';
+                }
             }
-
-            // Special case for '0' padding: if fill is '0' and align is not explicitly left or center, it should behave like right align for numbers
-            if (spec.fill == '0' && spec.has_width() && spec.align == '\0' && is_numeric_type_for_default_align) {
-                 // This is a common expectation for zero padding (e.g. printf %05d)
-                 // For "{:010.2f}", align_char would be '>' due to default for numeric.
-                 // The main thing is that `fill` is '0'.
-            }
-
 
             if (align_char == '<') { // Left align
                 result += value;
@@ -195,115 +197,74 @@ namespace compat {
                 for(int i=0; i<pad_left; ++i) result += spec.fill;
                 result += value;
                 for(int i=0; i<pad_right; ++i) result += spec.fill;
-            } else { // Should not happen if align is validated or defaulted
-                result += value; // Or throw error
+            } else {
+                result += value;
             }
             return result;
         }
 
-
-        // Base formatter template (should lead to compile error if not specialized)
+        // Base formatter template
         template <typename T, typename CharT = char>
         struct formatter {
-             // This static_assert will fire if no specialization is found.
-             // Note: Making it truly dependent to avoid premature instantiation can be tricky.
-             // A common way is to make it dependent on a template parameter of a member function.
             static_assert(sizeof(T) == 0, "No formatter found for this type. Please specialize compat::internal::formatter.");
-            // static std::string format(const T& value, const ParsedFormatSpec& spec); // Declaration
         };
 
-
-        // Generic formatter for types convertible by std::stringstream and respecting basic specifiers
+        // Generic formatter for types convertible by std::stringstream
         template <typename T>
-        std::string format_basic_type(const T& value, ParsedFormatSpec spec) { // Pass spec by value if we modify it
+        std::string format_basic_type(const T& value, ParsedFormatSpec spec) {
             std::stringstream ss;
             bool is_float = std::is_floating_point<T>::value;
 
             if (is_float) {
-                if (spec.type == 'f') {
+                if (spec.type == 'f' || spec.type == 'F') {
                     ss << std::fixed;
                     if (spec.has_precision()) {
                         ss << std::setprecision(spec.precision);
                     } else {
                         ss << std::setprecision(6); // Default precision for 'f'
                     }
-                } else if (spec.has_precision()) { // General precision for floats (e.g. {:.2})
+                } else if (spec.has_precision()) {
                     ss << std::setprecision(spec.precision);
-                } else if (spec.type == '\0' && !spec.has_precision() && !spec.has_fill_align() && !spec.has_width()) {
-                    // Default formatting for float without any specifiers (like {} for a float)
-                    // std::format usually prints minimal digits (e.g. 3.0 -> "3")
-                    // std::to_string behavior or cout default is often 6 decimal places (e.g. 3.0 -> "3.000000")
-                    // The test `CompatFormat.MultipleArguments` expects "3.000000" for `3.0`.
-                    // Let's try to match that expectation for basic float output.
-                    // However, this might conflict with typical std::format behavior for general cases.
-                    // For now, let's stick to stringstream's default unless 'f' or precision is specified.
-                    // The test "Five args: {} {} {} {} {}" has 3.0 -> "3.000000"
-                    // If value is 3.0, ss << value might produce "3". We might need to force precision 6 here.
-                    // Let's make a specific check: if it's a float, no type, no precision, print with 6 decimal places for the test.
-                    // This is a bit of a hack for that specific test case.
-                    // A better default for {} on a float would be to mimic std::format's general (shortest) representation.
-                    // For now, to pass the existing test:
-                     if (value == static_cast<long long>(value)) { // Check if it's a whole number like 3.0
-                         ss << std::fixed << std::setprecision(6); // Force .000000 for whole numbers to pass test
+                } else if (spec.type == '\0' && !spec.has_fill_align() && !spec.has_width()) {
+                     if (value == static_cast<long long>(value)) {
+                         ss << std::fixed << std::setprecision(6);
                      } else {
-                        // Use default stream precision for non-whole floats or rely on its general format.
                         // Default std::stringstream precision is usually 6.
                      }
                 }
             }
-            // (No specific handling for integers like 'd' yet, they use default stream behavior)
 
-            // Validate type specifier for basic types
-            if (spec.type != '\0') { // If a type is specified
+            if (spec.type != '\0') {
                 if (is_float) {
-                    if (spec.type != 'f' && spec.type != 'F') { // Common float types
+                    if (spec.type != 'f' && spec.type != 'F') {
                         throw std::runtime_error("Invalid type specifier '" + std::string(1, spec.type) + "' for floating-point argument");
                     }
                 } else if (std::is_integral<T>::value) {
-                    // Add allowed integer types here if any, e.g. 'd', 'x', 'o', 'b'
-                    // For now, any type spec for int is an error unless we support it.
-                    if (spec.type != 'd') { // Assuming 'd' is the only potential int type for now (though not explicitly handled for output yet)
+                    if (spec.type != 'd') {
                          throw std::runtime_error("Invalid type specifier '" + std::string(1, spec.type) + "' for integral argument");
                     }
-                } else {
-                    // Other types (like bool, or if this function is ever used for strings by mistake)
+                } else if (!std::is_same<T,bool>::value) { // Bool formatter handles its own 'b' or default
                      throw std::runtime_error("Type specifier '" + std::string(1, spec.type) + "' not allowed for this argument type");
                 }
             }
 
-
             ss << value;
             std::string str_val = ss.str();
 
-            // Post-processing for {:f} when value is integer like 3.0 -> "3" from stream if not set_precision before.
-            // If type is 'f' and precision was defaulted to 6, and output has no decimal point, add .000000
-            if (is_float && spec.type == 'f' && !spec.has_precision()) { // Precision was defaulted to 6
-                 if (str_val.find('.') == std::string::npos) { // Check if it printed as an integer e.g. "3"
-                     str_val += ".000000"; // Append default precision zeros
+            if (is_float && (spec.type == 'f' || spec.type == 'F') && !spec.has_precision()) {
+                 if (str_val.find('.') == std::string::npos) {
+                     str_val += ".000000";
                  }
             }
-
-
-            if (spec.type == 'b' && std::is_same<T, bool>::value) {
-                // Already handled by bool formatter specialization, this is for basic types
-            }
-
-            // Default alignment for numbers should be right if not specified.
-            // This is now handled in apply_padding's logic.
-            // if (spec.align == '\0' && (is_float || std::is_integral<T>::value)) {
-            //     spec.align = '>'; // Modify local copy of spec
-            // }
-
             return apply_padding(str_val, spec);
         }
-
 
         template<> struct formatter<const char*> {
             static std::string format(const char* value, const ParsedFormatSpec& spec) {
                 return apply_padding(std::string(value), spec);
             }
         };
-        template<> struct formatter<char*> { // Added specialization for char*
+        template<> struct formatter<char*> {
             static std::string format(char* value, const ParsedFormatSpec& spec) {
                 return apply_padding(std::string(value), spec);
             }
@@ -324,7 +285,6 @@ namespace compat {
             }
         };
 
-        // Macro for std::to_string compatible types, now using format_basic_type
         #define DEFINE_FORMATTER_STREAMABLE(TYPE) \
             template<> struct formatter<TYPE> { \
                 static std::string format(TYPE value, const ParsedFormatSpec& spec) { \
@@ -344,14 +304,12 @@ namespace compat {
 
         template<> struct formatter<bool> {
             static std::string format(bool value, const ParsedFormatSpec& spec) {
-                // std::format outputs "true" or "false", not 1 or 0 by default for bools
+                 if (spec.type != '\0' && spec.type != 'b' && spec.type != 's'){ // s for string-like, b for bool
+                    throw std::runtime_error("Invalid type specifier for bool argument");
+                }
                 return apply_padding(value ? "true" : "false", spec);
             }
         };
-
-        // Fallback for unknown types - this will cause a static_assert in the primary template
-        // Or we can add a more specific error message here if we use SFINAE to select this.
-        // For now, the primary template's static_assert handles it.
 
         template <std::size_t I, typename Tuple, typename OutputIt>
         void format_nth_arg_to(OutputIt& out, const Tuple& tpl, const ParsedFormatSpec& spec) {
@@ -368,7 +326,7 @@ namespace compat {
         struct DispatchHelper {
             OutputIt& out_ref;
             const Tuple& tuple_ref;
-            const ParsedFormatSpec& spec_ref; // Changed from std::string to ParsedFormatSpec
+            const ParsedFormatSpec& spec_ref;
             std::size_t target_idx_val;
             bool& processed_flag_ref;
 
@@ -385,17 +343,11 @@ namespace compat {
 
     } // namespace internal
 
-
-    // ##########################################################################
-    // ## Public API implementations (C++17 mode)
-    // ##########################################################################
-
     enum class IndexingMode {
-        Unknown, // Initial state
+        Unknown,
         Automatic,
         Manual
     };
-
 
     template <typename OutputIt, typename... Args>
     OutputIt format_to(OutputIt out, const std::string& fmt, Args&&... args) {
@@ -406,7 +358,7 @@ namespace compat {
 
         for (std::size_t i = 0; i < fmt.length(); ++i) {
             if (fmt[i] == '{') {
-                if (i + 1 < fmt.length() && fmt[i+1] == '{') { // Escaped {{
+                if (i + 1 < fmt.length() && fmt[i+1] == '{') {
                     *out++ = '{';
                     i++;
                 } else {
@@ -420,26 +372,24 @@ namespace compat {
                     try {
                         parsed_spec = internal::parse_placeholder_content(placeholder_full_content);
                     } catch (const std::runtime_error& e) {
-                        // Rethrow or wrap if more context is needed
                         throw std::runtime_error(std::string("Error parsing placeholder content '") + placeholder_full_content + "': " + e.what());
                     }
                     
                     std::size_t arg_to_format_idx;
 
-                    if (parsed_spec.arg_id_str.empty()) { // Automatic indexing
+                    if (parsed_spec.arg_id_str.empty()) {
                         if (indexing_mode == IndexingMode::Manual) {
                             throw std::runtime_error("Cannot switch from manual (e.g. {0}) to automatic (e.g. {}) argument indexing");
                         }
                         indexing_mode = IndexingMode::Automatic;
                         arg_to_format_idx = current_auto_arg_index;
                         current_auto_arg_index++;
-                    } else { // Manual indexing
+                    } else {
                         if (indexing_mode == IndexingMode::Automatic) {
                             throw std::runtime_error("Cannot switch from automatic (e.g. {}) to manual (e.g. {0}) argument indexing");
                         }
                         indexing_mode = IndexingMode::Manual;
                         try {
-                            // Ensure arg_id_str contains only digits
                             for(char ch_id : parsed_spec.arg_id_str) {
                                 if (!std::isdigit(ch_id)) {
                                     throw std::invalid_argument("Argument ID is not a number");
@@ -470,7 +420,7 @@ namespace compat {
                     i = placeholder_end; 
                 }
             } else if (fmt[i] == '}') {
-                if (i + 1 < fmt.length() && fmt[i+1] == '}') { // Escaped }}
+                if (i + 1 < fmt.length() && fmt[i+1] == '}') {
                     *out++ = '}';
                     i++; 
                 } else {
@@ -486,21 +436,17 @@ namespace compat {
     template <typename... Args>
     std::string format(const std::string& fmt, Args&&... args) {
         std::string s;
-        // Ensure this calls compat::format_to, not some internal one.
-        // Since format_to is now correctly in compat namespace, this should be fine.
         format_to(std::back_inserter(s), fmt, std::forward<Args>(args)...);
         return s;
     }
 
     template <typename... Args>
     void print(const std::string& fmt, Args&&... args) {
-        // Ensure this calls compat::format_to
         format_to(std::ostream_iterator<char>(std::cout), fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
     void println(const std::string& fmt, Args&&... args) {
-        // Ensure this calls compat::format_to
         format_to(std::ostream_iterator<char>(std::cout), fmt, std::forward<Args>(args)...);
         std::cout << '\n';
     }

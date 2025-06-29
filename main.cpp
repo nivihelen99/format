@@ -23,14 +23,15 @@ int main() {
 
     // Demonstrating some basic format specifiers
     double value = 123.456789;
-    compat::println("Value with default float formatting: {}", value);
-    compat::println("Value specified as '{:.2f}': {:.2f}", value);
-    compat::println("Value specified as '{:10.2f}': '{:10.2f}'", value);
-    compat::println("Value specified as '{:*<10.2f}': '{:*<10.2f}'", value);
+    compat::println("Value with default float formatting: {}", value); // This line was okay
+    // Corrected lines:
+    compat::println("Value with spec ':.2f': {:.2f}", value);
+    compat::println("Value with spec ':10.2f': {:10.2f}", value);
+    compat::println("Value with spec ':*<10.2f': {:*<10.2f}", value);
     
     std::string text = "text";
-    compat::println("String '{}' padded to 10 chars, right aligned with '*': '{:*>10}'", text, text);
-    compat::println("String '{}' padded to 10 chars, centered with ' ': '{:^10}'", text, text);
+    compat::println("String '{}' with spec ':*>10': '{:*>10}'", text, text);
+    compat::println("String '{}' with spec ':^10': '{:^10}'", text, text);
 
 
     // Example from original requirement.md (if any specific one was there)
