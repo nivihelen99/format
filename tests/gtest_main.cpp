@@ -230,9 +230,9 @@ TEST(CompatFormatSpecifiers, PositionalWithSpecifiers) {
 }
 
 TEST(CompatFormatSpecifiers, InvalidSpecifiers) {
-    // Invalid alignment char
-    EXPECT_THROW(compat::format("{:x<10}", "test"), std::runtime_error);
-    // Precision without digits
+    // Valid: fill 'x', align '<', width 10 for "test"
+    EXPECT_EQ(compat::format("{:x<10}", "test"), "testxxxxxx");
+    // Precision without digits - should throw
     EXPECT_THROW(compat::format("{:.}", 3.14), std::runtime_error);
     // Invalid char in spec
     EXPECT_THROW(compat::format("{:10#}", 3.14), std::runtime_error);
